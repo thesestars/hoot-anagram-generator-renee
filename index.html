@@ -667,7 +667,7 @@
         /* ============================================
            ANIMATION FUNCTIONS
            ============================================ */
-        function startAnimation() {
+        async function startAnimation() {
             const textA = inputA.value.trim().toUpperCase();
             const textB = inputB.value.trim().toUpperCase();
             
@@ -692,7 +692,7 @@
             letterContainer.innerHTML = '';
             letterContainer.classList.remove('settled'); // Allow fall-in animation
             letters = [];
-            
+            await waitForLayout();
             // Create letter elements based on input A
             createLetters(textA);
             
