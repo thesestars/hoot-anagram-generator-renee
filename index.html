@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HOOT! Anagrams - Animated Anagram Creator</title>
+    <style>
+        /* ============================================
+           CONFIGURATION - TWEAK THESE VALUES
+           ============================================ */
+        :root {
+            /* TIMING SETTINGS */
+            --pause-duration: 2500ms;        /* Pause between animations (2-3 seconds recommended) */
+            --letter-fall-duration: 800ms;   /* How long letters take to fall from tree */
+            --letter-move-duration: 2000ms;  /* How long letter rearrangement takes - smooth bidirectional */
+            --letter-stagger: 80ms;          /* Delay between each letter starting animation */
+            
+            /* ANIMATION SETTINGS */
+            --bounce-intensity: 1.15;        /* Letter bounce scale (1.0 = no bounce) */
+            --rotation-range: 20deg;         /* Max rotation during movement */
+            --float-amount: 4px;             /* Idle floating movement */
+            --float-height: 25px;            /* How high letters float during rearrangement */
+            
+            /* MAX CHARACTERS */
+            --max-characters: 25;            /* Maximum input length including spaces */
+            
+            /* COLORS - Scrabble-style tiles */
+            --tile-face: #F5DEB3;            /* Scrabble tile beige/wheat color */
+            --tile-dark: #D4B896;            /* Darker edge of tile */
+            --tile-light: #FFF8E7;           /* Light highlight on tile */
+            --letter-color: #1a1a1a;         /* Dark letter color for contrast */
+        }
+
+        /* ============================================
+           BASE STYLES
+           ============================================ */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Comic Sans MS', 'Chalkboard', cursive;
+            overflow-x: hidden;
+            background: #1a1a2e;
+        }
+        /* ============================================
+   APP CONTAINER (wraps controls + video)
+   ============================================ */
+.app-container {
+    max-width: 405px;
+    margin: 0 auto;
+}
+
+
+        /* ============================================
+           CONTROL PANEL (Outside video area)
+           ============================================ */
+        .control-panel {
+    background: linear-gradient(135deg, #2d2d44 0%, #1a1a2e 100%);
+    padding: 12px 12px 10px;   /* top | sides | bottom */
+    border-bottom: 3px solid #FFD700;
+
+    max-width: 405px;
+    margin: 0 auto;
+
+    position: relative;
+    z-index: 50;
+}
+
+        .control-panel h1 {
+    color: #FFD700;
+    text-align: center;
+    margin-bottom: 15px;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+
+    white-space: nowrap;
+    font-size: 22px;
+    line-height: 1.2;
+}
+ /* Hide title to reclaim vertical space */
+.control-panel h1 {
+    display: none;
+}   
+
+
+        .input-group {
+    display: flex;
+    flex-wrap: nowrap;      /* FORCE same row */
+    gap: 15px;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+        .input-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .input-wrapper label {
+            color: #fff;
+            font-size: 14px;
+        }
+
+        .input-wrapper input {
+            padding: 10px 15px;
+            font-size: 18px;
+            border: 2px solid #FFD700;
+            border-radius: 10px;
+            background: #2d2d44;
+            color: #fff;
+            width: 190px;
+            text-transform: uppercase;
+        }
+
+        .input-wrapper input:focus {
+            outline: none;
+            box-shadow: 0 0 10px #FFD700;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        button {
+    padding: 8px 16px;        /* ⬅ BIG vertical space saver */
+    font-size: 14px;         /* ⬅ visually balanced */
+    font-weight: bold;
+    border: none;
+    border-radius: 18px;     /* ⬅ less pill-like */
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    line-height: 1;
+}
+        button:hover {
+            transform: scale(1.05);
+        }
+
+        .btn-start {
+            background: linear-gradient(135deg, #4CAF50, #2E7D32);
+            color: white;
+            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
+        }
+
+        .btn-stop {
+            background: linear-gradient(135deg, #f44336, #c62828);
+            color: white;
+            box-shadow: 0 4px 15px rgba(244, 67, 54, 0.4);
+        }
+
+        .status-text {
+            color: #aaa;
+            text-align: center;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+
+        /* ============================================
+           VIDEO CONTAINER (9:16 aspect ratio)
+           ============================================ */
+        .video-container {
+    width: 100%;
+    max-width: 405px;
+
+    height: 720px;            /* ⬅ FORCE FULL 9:16 HEIGHT */
+    max-height: 100vh;        /* ⬅ safety for small screens */
+
+    margin: 0 auto;
+    position: relative;
+    overflow: hidden;
+    border-radius: 10px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    background: #000;
+}
+
+        /* ============================================
+           BACKGROUND VIDEO
+           ============================================ */
+        .background-video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            z-index: 1;
+        }
+
+        /* ============================================
+           ANAGRAM STAGE - Fixed container for letter animations
+           All letter positioning is RELATIVE to this container
+           Sized to accommodate up to 25 characters with word wrapping
+           Fixed position to avoid overlapping video branding
+           ============================================ */
+        .anagram-stage {
+            position: absolute;
+            width: 94%;
+            height: 32%;           /* Increased from 25% for breathing room */
+            top: 38.5%;            /* Adjusted to keep visual center same: was 42%, moved up by half the height increase */
+            left: 3%;
+            z-index: 20;
+            /* MUST remain visible - letters lift up during animation */
+            overflow: visible;
+        }
+
+        .letter-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            /* 
+             * CRITICAL: This container is the positioning context for all letters.
+             * Letters use position:absolute relative to THIS element.
+             * overflow:visible is REQUIRED - letters lift/float during animation.
+             * The JavaScript ensures letters stay within bounds during rearrangement.
+             */
+            overflow: visible;
+            /* Add padding to create safe zone for floating letters */
+            padding-top: 30px;
+            padding-bottom: 20px;
+            box-sizing: border-box;
+        }
+        
+        /* Settled state - NO overflow clipping to prevent letter cutoff */
+        .letter-container.settled {
+            /* Keep overflow visible - letters float above resting position during animation */
+            overflow: visible;
+        }
+
+        /* ============================================
+           SCRABBLE-STYLE LETTER TILES
+           Cream/beige tiles that pop from the dark background
+           ============================================ */
+        .letter {
+            display: inline-flex;
+            justify-content: center;
+            align-items: center;
+            width: 30px;
+            height: 36px;
+            /* Scrabble tile gradient - light beige with subtle depth */
+            background: linear-gradient(145deg, var(--tile-light) 0%, var(--tile-face) 50%, var(--tile-dark) 100%);
+            color: var(--letter-color);
+            font-size: 22px;
+            font-weight: bold;
+            font-family: 'Georgia', 'Times New Roman', serif;
+            border-radius: 4px;
+            /* Multi-layer shadow for 3D tile effect */
+            box-shadow: 
+                /* Outer shadow for depth */
+                0 4px 8px rgba(0,0,0,0.4),
+                0 2px 4px rgba(0,0,0,0.3),
+                /* Inner bevel highlight */
+                inset 0 1px 0 rgba(255,255,255,0.8),
+                inset 1px 0 0 rgba(255,255,255,0.4),
+                /* Inner bevel shadow */
+                inset 0 -1px 0 rgba(0,0,0,0.15),
+                inset -1px 0 0 rgba(0,0,0,0.1);
+            /* Subtle border for definition */
+            border: 1px solid rgba(139, 119, 101, 0.5);
+            /* Position absolute RELATIVE to .letter-container */
+            position: absolute;
+            opacity: 0;
+            /* No text shadow needed - dark on light is clear */
+            text-shadow: none;
+            /* No transform by default - positions set via left/top */
+            transform: rotate(0deg) scale(1);
+            transition: none;
+            /* Ensure letters don't affect container sizing */
+            will-change: left, top, opacity, transform;
+        }
+        
+        /* Add wood grain texture effect via pseudo-element */
+        .letter::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: 
+                repeating-linear-gradient(
+                    90deg,
+                    transparent 0px,
+                    transparent 2px,
+                    rgba(139, 119, 101, 0.03) 2px,
+                    rgba(139, 119, 101, 0.03) 4px
+                );
+            border-radius: 3px;
+            pointer-events: none;
+        }
+
+        .letter.space {
+            background: transparent;
+            box-shadow: none;
+            border: none;
+            width: 14px;
+        }
+        
+        .letter.space::before {
+            display: none;
+        }
+        
+        /* Punctuation tiles - same size as letters but centered content */
+        .letter.punctuation {
+            /* Same dimensions as regular letters for consistent layout */
+            width: 30px;
+            height: 36px;
+            /* Center punctuation marks properly */
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Falling animation - starts above container, lands at final position */
+        .letter.falling {
+            animation: letterFall var(--letter-fall-duration) cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+
+        @keyframes letterFall {
+            0% {
+                opacity: 0;
+                transform: rotate(-20deg) scale(0.8);
+            }
+            60% {
+                opacity: 1;
+            }
+            80% {
+                transform: rotate(5deg) scale(1.05);
+            }
+            100% {
+                opacity: 1;
+                transform: rotate(0deg) scale(1);
+            }
+        }
+
+        /* Idle floating animation - gentle magical hover */
+        .letter.idle {
+            animation: letterIdle 3s ease-in-out infinite;
+            animation-fill-mode: none;
+        }
+
+        @keyframes letterIdle {
+            0%, 100% { 
+                transform: translateY(0) rotate(0deg) scale(1); 
+            }
+            50% { 
+                transform: translateY(-4px) rotate(0deg) scale(1); 
+            }
+        }
+
+        /* Floating/moving animation - magical rearrangement with glow */
+        .letter.floating {
+            /* Glowing effect during movement */
+            box-shadow: 
+                0 0 20px rgba(255, 215, 0, 0.6),
+                0 0 40px rgba(255, 215, 0, 0.3),
+                0 8px 16px rgba(0,0,0,0.4),
+                inset 0 1px 0 rgba(255,255,255,0.8),
+                inset 1px 0 0 rgba(255,255,255,0.4);
+            z-index: 100;
+        }
+
+        /* Moving animation - smooth floating transition between positions */
+        .letter.moving {
+            transition: 
+                left var(--letter-move-duration) cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                top var(--letter-move-duration) cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                transform var(--letter-move-duration) cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                box-shadow 0.3s ease;
+        }
+
+        /* ============================================
+           RESPONSIVE ADJUSTMENTS
+           ============================================ */
+        @media (max-width: 500px) {
+            .control-panel {
+                padding: 15px 10px;
+            }
+            .input-wrapper input {
+                width: 200px;
+                font-size: 16px;
+            }
+            button {
+                padding: 10px 20px;
+                font-size: 14px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+
+        <!-- Control Panel -->
+        <div class="control-panel">
+            <h1>🦉 HOOT! Anagram Animator</h1>
+            <div class="input-group">
+                <div class="input-wrapper">
+                    <label for="inputA">Original Word/Phrase:</label>
+                    <input type="text" id="inputA" maxlength="25" value="SKATEBOARD">
+                </div>
+                <div class="input-wrapper">
+                    <label for="inputB">Anagram:</label>
+                    <input type="text" id="inputB" maxlength="25" value="ROAD BE TASK">
+                </div>
+            </div>
+            <div class="button-group">
+                <button class="btn-start" id="btnStart">▶ Start Animation</button>
+                <button class="btn-stop" id="btnStop">⏹ Stop</button>
+            </div>
+            <div class="status-text" id="status">Enter your words and click Start!</div>
+        </div>
+
+        <!-- VIDEO STAGE -->
+        <div class="video-container" id="videoContainer">
+            <video
+                class="background-video"
+                id="backgroundVideo"
+                src="https://d1yei2z3i6k35z.cloudfront.net/11264552/698a56d53cee4_hoot-background-loop.mp4"
+                autoplay
+                loop
+                muted
+                playsinline
+            ></video>
+
+            <div class="anagram-stage">
+                <div class="letter-container" id="letterContainer"></div>
+            </div>
+        </div>
+
+    </div>
+
+</body>
+
+
+    <script>
+        /* ============================================
+           CONFIGURATION CONSTANTS
+           (Adjust these to tweak behavior)
+           ============================================ */
+        const CONFIG = {
+            // TIMING (in milliseconds)
+            pauseDuration: 2500,         // Pause between animations
+            letterFallDuration: 800,     // Letter fall animation time
+            letterMoveDuration: 2000,    // Letter rearrangement time (1.5-2.5s for smooth bidirectional)
+            letterStagger: 80,           // Delay between each letter starting to move
+            
+            // LIMITS
+            maxCharacters: 25,           // Maximum input length
+            
+            // VISUAL - Sized to fit up to 25 chars with word wrapping
+            letterWidth: 30,             // Width of each letter tile (Scrabble style)
+            letterHeight: 36,            // Height of each letter tile
+            letterGap: 5,                // Gap between letters
+            spaceWidth: 14,              // Width for space characters
+            
+            // FLOATING ANIMATION SETTINGS
+            floatHeight: 25,             // How high letters rise during rearrangement
+            floatRotation: 15,           // Max rotation degrees during float
+        };
+
+        /* ============================================
+           STATE VARIABLES
+           ============================================ */
+        let isAnimating = false;
+        let animationLoop = null;
+        let letters = [];
+        let currentPhase = 'initial'; // 'initial', 'showing-a', 'showing-b'
+
+        /* ============================================
+           DOM ELEMENTS
+           ============================================ */
+        const inputA = document.getElementById('inputA');
+        const inputB = document.getElementById('inputB');
+        const btnStart = document.getElementById('btnStart');
+        const btnStop = document.getElementById('btnStop');
+        const status = document.getElementById('status');
+        const letterContainer = document.getElementById('letterContainer');
+        const videoContainer = document.getElementById('videoContainer');
+        const backgroundVideo = document.getElementById('backgroundVideo');
+
+        /* ============================================
+           INITIALIZATION
+           ============================================ */
+        function init() {
+            setupEventListeners();
+            
+            // Ensure video plays (some browsers block autoplay)
+            backgroundVideo.play().catch(e => {
+                console.log('Autoplay blocked, will play on user interaction');
+            });
+        }
+
+        // Setup event listeners
+        function setupEventListeners() {
+            btnStart.addEventListener('click', startAnimation);
+            btnStop.addEventListener('click', stopAnimation);
+            
+            // Enforce uppercase
+            inputA.addEventListener('input', (e) => {
+                e.target.value = e.target.value.toUpperCase();
+            });
+            inputB.addEventListener('input', (e) => {
+                e.target.value = e.target.value.toUpperCase();
+            });
+            
+            // Play video on any user interaction (for browsers that block autoplay)
+            document.addEventListener('click', () => {
+                if (backgroundVideo.paused) {
+                    backgroundVideo.play();
+                }
+            }, { once: true });
+        }
+
+        /* ============================================
+           LETTER POSITION CALCULATIONS
+           All positions are calculated RELATIVE to the letter container.
+           This ensures letters stay within the anagram stage bounds.
+           
+           IMPORTANT: Words are NEVER broken across lines.
+           Line breaks only occur at space boundaries.
+           ============================================ */
+        function calculateLetterPositions(text) {
+            const positions = [];
+            
+            // Get container dimensions (these are the BOUNDS for all letters)
+            const containerWidth = letterContainer.offsetWidth;
+            const containerHeight = letterContainer.offsetHeight;
+            
+            // Account for CSS padding on letter-container (30px top, 20px bottom)
+            const cssPaddingTop = 30;
+            const cssPaddingBottom = 20;
+            const contentHeight = containerHeight - cssPaddingTop - cssPaddingBottom;
+            
+            // Use inner padding to keep letters away from edges
+            const padding = 8;
+            const availableWidth = containerWidth - (padding * 2);
+            
+            // First, split text into words (preserving character indices)
+            const words = [];
+            let currentWord = [];
+            let charIndex = 0;
+            
+            text.split('').forEach((char, i) => {
+                if (char === ' ') {
+                    // End of a word - save it if not empty
+                    if (currentWord.length > 0) {
+                        words.push({ chars: currentWord, isSpace: false });
+                        currentWord = [];
+                    }
+                    // Add space as its own "word"
+                    words.push({ 
+                        chars: [{ char: ' ', width: CONFIG.spaceWidth, index: i }], 
+                        isSpace: true 
+                    });
+                } else {
+                    currentWord.push({ 
+                        char, 
+                        width: CONFIG.letterWidth, 
+                        index: i 
+                    });
+                }
+            });
+            
+            // Don't forget the last word
+            if (currentWord.length > 0) {
+                words.push({ chars: currentWord, isSpace: false });
+            }
+            
+            // Calculate width of each word
+            words.forEach(word => {
+                let width = 0;
+                word.chars.forEach((c, i) => {
+                    width += c.width;
+                    if (i < word.chars.length - 1) width += CONFIG.letterGap;
+                });
+                word.totalWidth = width;
+            });
+            
+            // Now arrange words into lines, never breaking a word
+            const lines = [];
+            let currentLine = [];
+            let currentLineWidth = 0;
+            
+            words.forEach((word, wordIndex) => {
+                // Skip leading spaces on a new line
+                if (word.isSpace && currentLine.length === 0) {
+                    return;
+                }
+                
+                // Calculate width needed for this word (including gap from previous)
+                const gapBefore = currentLine.length > 0 ? CONFIG.letterGap : 0;
+                const widthNeeded = word.totalWidth + gapBefore;
+                
+                // If this word doesn't fit on current line, start a new line
+                // (unless the line is empty - then we must put it there anyway)
+                if (currentLineWidth + widthNeeded > availableWidth && currentLine.length > 0) {
+                    // Remove trailing space from current line if present
+                    if (currentLine.length > 0 && currentLine[currentLine.length - 1].isSpace) {
+                        currentLine.pop();
+                    }
+                    lines.push(currentLine);
+                    currentLine = [];
+                    currentLineWidth = 0;
+                    
+                    // Skip this word if it's a space (don't start line with space)
+                    if (word.isSpace) {
+                        return;
+                    }
+                }
+                
+                // Add word to current line
+                currentLine.push(word);
+                currentLineWidth += widthNeeded;
+            });
+            
+            // Add final line
+            if (currentLine.length > 0) {
+                // Remove trailing space
+                if (currentLine[currentLine.length - 1].isSpace) {
+                    currentLine.pop();
+                }
+                if (currentLine.length > 0) {
+                    lines.push(currentLine);
+                }
+            }
+            
+            // Calculate vertical layout - center all lines within content area (accounting for CSS padding)
+            const lineHeight = CONFIG.letterHeight + 12; // Letter height + spacing
+            const totalLinesHeight = lines.length * lineHeight;
+            
+            // Center vertically within the content area (below the top padding)
+            // This gives room at top for the "lift" animation
+            let startY = cssPaddingTop + Math.max(padding, (contentHeight - totalLinesHeight) / 2);
+            
+            // Calculate positions for each line
+            lines.forEach((line, lineIndex) => {
+                // Calculate actual line width (sum of all words with gaps between)
+                let lineWidth = 0;
+                line.forEach((word, wordIdx) => {
+                    lineWidth += word.totalWidth;
+                    if (wordIdx < line.length - 1) lineWidth += CONFIG.letterGap;
+                });
+                
+                // Center line horizontally within container
+                let currentX = Math.max(padding, (containerWidth - lineWidth) / 2);
+                const lineY = startY + lineIndex * lineHeight;
+                
+                // Place each character from each word
+                line.forEach((word, wordIdx) => {
+                    word.chars.forEach((charData, charIdx) => {
+                        positions[charData.index] = {
+                            x: currentX,
+                            y: lineY,
+                            char: charData.char
+                        };
+                        currentX += charData.width + CONFIG.letterGap;
+                    });
+                });
+            });
+            
+            return positions;
+        }
+
+        /* ============================================
+           ANIMATION FUNCTIONS
+           ============================================ */
+        function startAnimation() {
+            const textA = inputA.value.trim().toUpperCase();
+            const textB = inputB.value.trim().toUpperCase();
+            
+            if (!textA || !textB) {
+                status.textContent = 'Please enter both words!';
+                return;
+            }
+            
+            if (textA.length > CONFIG.maxCharacters || textB.length > CONFIG.maxCharacters) {
+                status.textContent = `Maximum ${CONFIG.maxCharacters} characters allowed!`;
+                return;
+            }
+            
+            // Ensure video is playing
+            backgroundVideo.play();
+            
+            isAnimating = true;
+            btnStart.disabled = true;
+            status.textContent = 'Animation running...';
+            
+            // Clear existing letters and reset container state
+            letterContainer.innerHTML = '';
+            letterContainer.classList.remove('settled'); // Allow fall-in animation
+            letters = [];
+            
+            // Create letter elements based on input A
+            createLetters(textA);
+            
+            // Start the animation loop
+            runAnimationCycle(textA, textB);
+        }
+
+        // Punctuation characters that should be treated as valid tiles
+        const PUNCTUATION_CHARS = new Set(['!', '?', '.', ',', ':', ';', "'", '"', '-', '(', ')', '&']);
+        
+        function isPunctuation(char) {
+            return PUNCTUATION_CHARS.has(char);
+        }
+        
+        function createLetters(text) {
+            const chars = text.split('');
+            
+            chars.forEach((char, i) => {
+                const letter = document.createElement('div');
+                
+                // Determine character type for proper CSS class
+                let className = 'letter';
+                if (char === ' ') {
+                    className += ' space';
+                } else if (isPunctuation(char)) {
+                    className += ' punctuation';
+                }
+                
+                letter.className = className;
+                letter.textContent = char === ' ' ? '' : char;
+                letter.dataset.index = i;
+                letter.dataset.char = char;
+                letter.dataset.type = char === ' ' ? 'space' : (isPunctuation(char) ? 'punctuation' : 'letter');
+                letterContainer.appendChild(letter);
+                letters.push(letter);
+            });
+        }
+
+        async function runAnimationCycle(textA, textB) {
+            // Phase 1: Letters fall from tree
+            await fallLetters(textA);
+            
+            // Main animation loop
+            while (isAnimating) {
+                // Show text A
+                await wait(CONFIG.pauseDuration);
+                if (!isAnimating) break;
+                
+                // Animate to text B
+                await animateToText(textB);
+                await wait(CONFIG.pauseDuration);
+                if (!isAnimating) break;
+                
+                // Animate back to text A
+                await animateToText(textA);
+            }
+        }
+
+        async function fallLetters(text) {
+            // Calculate final positions WITHIN the container
+            const positions = calculateLetterPositions(text);
+            
+            // Store final positions on each letter for reference
+            letters.forEach((letter, i) => {
+                const pos = positions[i];
+                if (pos) {
+                    letter.dataset.targetX = pos.x;
+                    letter.dataset.targetY = pos.y;
+                }
+            });
+            
+            for (let i = 0; i < letters.length; i++) {
+                if (!isAnimating) return;
+                
+                const letter = letters[i];
+                const pos = positions[i];
+                
+                if (!pos) continue;
+                
+                // Set initial position ABOVE the container (negative top value)
+                // The letter starts above and falls to its final position
+                letter.style.left = pos.x + 'px';
+                letter.style.top = '-60px'; // Start above the container
+                letter.style.opacity = '0';
+                
+                // Trigger fall animation with stagger
+                setTimeout(() => {
+                    // Add falling class for animation
+                    letter.classList.add('falling');
+                    
+                    // Animate to final position using CSS transition for top
+                    letter.style.transition = `top ${CONFIG.letterFallDuration}ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity ${CONFIG.letterFallDuration * 0.6}ms ease-out`;
+                    letter.style.top = pos.y + 'px';
+                    letter.style.opacity = '1';
+                }, i * CONFIG.letterStagger);
+            }
+            
+            // Wait for all letters to fall
+            await wait(CONFIG.letterFallDuration + letters.length * CONFIG.letterStagger + 100);
+            
+            // Remove falling animation, add idle animation
+            letters.forEach((letter, i) => {
+                letter.classList.remove('falling');
+                letter.style.transition = 'none'; // Clear transition
+                letter.classList.add('idle');
+                letter.style.opacity = '1';
+                
+                // Ensure final position is set correctly (relative to container)
+                const pos = positions[i];
+                if (pos) {
+                    letter.style.left = pos.x + 'px';
+                    letter.style.top = pos.y + 'px';
+                }
+            });
+            
+            // Mark container as settled - enables overflow clipping
+            letterContainer.classList.add('settled');
+        }
+
+        async function animateToText(targetText) {
+            if (!isAnimating) return;
+            
+            // Calculate target positions WITHIN the container bounds
+            const targetPositions = calculateLetterPositions(targetText);
+            const targetChars = targetText.split('');
+            
+            // Get container bounds for clamping (safety check)
+            const containerWidth = letterContainer.offsetWidth;
+            const containerHeight = letterContainer.offsetHeight;
+            const padding = 10;
+            
+            // ============================================
+            // STEP 1: Capture CURRENT position of every letter
+            // This is CRITICAL for bidirectional animation
+            // ============================================
+            const currentPositions = letters.map(letter => ({
+                x: parseFloat(letter.style.left) || 0,
+                y: parseFloat(letter.style.top) || 0
+            }));
+            
+            // ============================================
+            // STEP 2: Create mapping from current letters to target positions
+            // Match letters by character, handling duplicates
+            // ============================================
+            const usedTargetIndices = new Set();
+            const mapping = [];
+            
+            letters.forEach((letter, sourceIndex) => {
+                const char = letter.dataset.char;
+                
+                // Find the next available position for this character in target
+                for (let targetIndex = 0; targetIndex < targetChars.length; targetIndex++) {
+                    if (targetChars[targetIndex] === char && !usedTargetIndices.has(targetIndex)) {
+                        usedTargetIndices.add(targetIndex);
+                        
+                        const targetPos = targetPositions[targetIndex];
+                        if (targetPos) {
+                            // Clamp position to container bounds (safety)
+                            const clampedX = Math.max(padding, Math.min(targetPos.x, containerWidth - CONFIG.letterWidth - padding));
+                            const clampedY = Math.max(padding, Math.min(targetPos.y, containerHeight - CONFIG.letterHeight - padding));
+                            
+                            mapping.push({
+                                letter: letter,
+                                letterIndex: sourceIndex,
+                                startPos: { x: currentPositions[sourceIndex].x, y: currentPositions[sourceIndex].y },
+                                targetPos: { x: clampedX, y: clampedY },
+                                rotation: (Math.random() - 0.5) * CONFIG.floatRotation * 2 // Pre-calculate rotation
+                            });
+                        }
+                        break;
+                    }
+                }
+            });
+            
+            // ============================================
+            // STEP 3: Prepare all letters for animation
+            // Remove idle, clear transforms, set up transitions
+            // ============================================
+            letters.forEach(letter => {
+                letter.classList.remove('idle');
+                letter.style.transition = 'none';
+                letter.style.transform = 'rotate(0deg) scale(1)';
+            });
+            
+            // Force reflow to ensure styles are applied
+            void letterContainer.offsetHeight;
+            
+            // ============================================
+            // PHASE 1: Lift ALL letters up simultaneously with glow
+            // ============================================
+            const liftDuration = 400;
+            
+            mapping.forEach((map, i) => {
+                const letter = map.letter;
+                if (letter.dataset.char === ' ') return;
+                
+                // Add floating class for glow effect
+                letter.classList.add('floating');
+                
+                // Set up lift transition
+                letter.style.transition = `transform ${liftDuration}ms cubic-bezier(0.34, 1.56, 0.64, 1)`;
+                letter.style.transform = `translateY(-${CONFIG.floatHeight}px) rotate(${map.rotation}deg) scale(1.1)`;
+            });
+            
+            await wait(liftDuration + 50);
+            if (!isAnimating) return;
+            
+            // ============================================
+            // PHASE 2: Move ALL letters to new positions (while floating)
+            // This is the MAIN transition - must be smooth and visible
+            // ============================================
+            const moveDuration = CONFIG.letterMoveDuration; // 2000-2500ms
+            
+            // Set up movement transitions for ALL letters at once
+            letters.forEach(letter => {
+                letter.style.transition = `left ${moveDuration}ms cubic-bezier(0.25, 0.1, 0.25, 1), top ${moveDuration}ms cubic-bezier(0.25, 0.1, 0.25, 1), transform ${moveDuration}ms cubic-bezier(0.25, 0.1, 0.25, 1)`;
+            });
+            
+            // Force reflow
+            void letterContainer.offsetHeight;
+            
+            // Apply new positions to ALL letters
+            mapping.forEach(map => {
+                const letter = map.letter;
+                
+                // Slight rotation variation during movement
+                const midRotation = (Math.random() - 0.5) * CONFIG.floatRotation;
+                
+                // MOVE to new position (this triggers the CSS transition)
+                letter.style.left = map.targetPos.x + 'px';
+                letter.style.top = map.targetPos.y + 'px';
+                
+                // Maintain floating appearance with slight rotation change
+                if (letter.dataset.char !== ' ') {
+                    letter.style.transform = `translateY(-${CONFIG.floatHeight}px) rotate(${midRotation}deg) scale(1.1)`;
+                }
+            });
+            
+            // Wait for movement to complete
+            await wait(moveDuration + 100);
+            if (!isAnimating) return;
+            
+            // ============================================
+            // PHASE 3: Settle ALL letters down (gentle landing)
+            // ============================================
+            const settleDuration = 500;
+            
+            mapping.forEach(map => {
+                const letter = map.letter;
+                if (letter.dataset.char === ' ') return;
+                
+                // Remove floating class (removes glow)
+                letter.classList.remove('floating');
+                
+                // Settle down transition
+                letter.style.transition = `transform ${settleDuration}ms cubic-bezier(0.34, 1.56, 0.64, 1)`;
+                letter.style.transform = 'translateY(0) rotate(0deg) scale(1)';
+            });
+            
+            await wait(settleDuration + 50);
+            
+            // ============================================
+            // PHASE 4: Return to idle animation
+            // Clean up all transitions and add idle class
+            // ============================================
+            letters.forEach(letter => {
+                letter.classList.remove('moving');
+                letter.classList.remove('floating');
+                letter.style.transition = 'none';
+                letter.style.transform = '';
+                letter.classList.add('idle');
+            });
+        }
+
+        function stopAnimation() {
+            isAnimating = false;
+            btnStart.disabled = false;
+            status.textContent = 'Animation stopped.';
+        }
+
+        /* ============================================
+           UTILITY FUNCTIONS
+           ============================================ */
+        function wait(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        // Initialize on load
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
