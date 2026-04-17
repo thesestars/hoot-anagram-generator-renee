@@ -979,6 +979,13 @@
         function wait(ms) {
             return new Promise(resolve => setTimeout(resolve, ms));
         }
+        function waitForLayout() {
+    return new Promise(resolve => {
+        requestAnimationFrame(() => {
+            requestAnimationFrame(resolve);
+        });
+    });
+}
 
         // Initialize on load
         window.addEventListener('DOMContentLoaded', init);
